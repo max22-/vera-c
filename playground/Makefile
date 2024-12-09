@@ -15,4 +15,4 @@ test: tests
 	./tests
 
 clean:
-	rm -f vera
+	rm -f vera tests
