@@ -4,10 +4,15 @@ all: vera
 vera: main.c vera.h
 	$(CC) $(CFLAGS) $< -o $@
 
-.PHONY: run clean
+tests: tests.c vera.h
+
+.PHONY: run clean test
 
 run: vera
 	./vera
+
+test: tests
+	./tests
 
 clean:
 	rm -f vera
