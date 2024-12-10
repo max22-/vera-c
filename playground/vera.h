@@ -7,6 +7,8 @@
 
 #include <stdlib.h> /* for exit() */
 
+/* The parser in inspired by https://zserge.com/jsmn/ */
+
 typedef struct vera_string {
     const char *string;
     size_t len;
