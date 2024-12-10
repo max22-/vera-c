@@ -15,6 +15,7 @@ typedef struct vera_string {
 } vera_string;
 
 enum vera_obj_type {
+    VERA_PORT,
     VERA_FACT,
     VERA_LHS,
     VERA_RHS,
@@ -22,14 +23,20 @@ enum vera_obj_type {
 
 typedef struct vera_object {
     enum vera_obj_type type;
-    struct {
-        vera_string vstr;
-        int intern;
-        union {
-            int keep;
-            unsigned int count;
-        } attr;
-    } fact;
+    union {
+        struct {
+            vera_string vstr;
+            int intern;
+            union {
+                int keep;
+                unsigned int count;
+            } attr;
+        } fact;
+        struct {
+            vera_string vstr;
+            int intern;
+        } port;
+    } as;
 } vera_obj;
 
 typedef struct {
@@ -97,6 +104,33 @@ static int vera_scmp(vera_string *s1, vera_string *s2) {
     return 1;
 }
 
+size_t slen(const char *str) {
+    size_t res = 0;
+    while(*(str++))
+        res++;
+    return res;
+}
+
+static void vera_add_port(vera_ctx *ctx, const char *name) {
+    if(ctx->pool == NULL) { /* if we do a first pass to calculate the needed pool size */
+        ctx->obj_count++;
+        return;
+    }
+    if(ctx->obj_count >= ctx->pool_size)
+        ERROR("out of memory");
+    vera_obj *obj = &ctx->pool[ctx->obj_count];
+    obj->type = VERA_PORT;
+    obj->as.port.vstr.string = name;
+    obj->as.port.vstr.len = slen(name);
+    ctx->obj_count++;
+}
+
+/* Make sure that `name` stays valid during the whole compilation */
+void vera_add_ports(vera_ctx *ctx, const char **ports, size_t port_count) {
+    for(size_t i = 0; i < port_count; i++)
+        vera_add_port(ctx, ports[i]);
+}
+
 static void vera_add_side(vera_ctx *ctx, enum vera_obj_type type) {
     if(ctx->pool == NULL) { /* if we do a first pass to calculate the needed pool size */
         ctx->obj_count++;
@@ -118,12 +152,12 @@ static void vera_add_fact(vera_ctx *ctx, vera_string vstr, enum vera_obj_type si
         ERROR("out of memory");
     vera_obj *obj = &ctx->pool[ctx->obj_count];
     obj->type = VERA_FACT;
-    obj->fact.vstr = vstr;
-    obj->fact.intern = -1;
+    obj->as.fact.vstr = vstr;
+    obj->as.fact.intern = -1;
     if(side == VERA_LHS) {
-        obj->fact.attr.keep = keep;
+        obj->as.fact.attr.keep = keep;
     } else if(side == VERA_RHS) {
-        obj->fact.attr.count = count;
+        obj->as.fact.attr.count = count;
     } else {
         ERROR("unreachable");
     }
@@ -242,13 +276,18 @@ size_t vera_parse(vera_ctx *ctx) {
 }
 
 #undef CURSOR
-#undef ERROR
+#undef DELIM
 
-/* ************************************************************************** */
+
+void vera_intern_strings(vera_ctx *ctx) {
+
+}
 
 void vera_compile(vera_ctx *ctx) {
 
 }
+
+#undef ERROR
 
 #endif
 #endif
