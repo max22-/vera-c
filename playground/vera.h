@@ -160,7 +160,7 @@ static int vera_is_in(char c, const char *set) {
     return 0;
 }
 
-int vera_int(vera_ctx *ctx) {
+static int vera_int(vera_ctx *ctx) {
     int start = ctx->pos;
     if(!isdigit(CURSOR)) ERROR("expected digit");
     while(isdigit(CURSOR))
@@ -172,7 +172,7 @@ int vera_int(vera_ctx *ctx) {
     return n;
 }
 
-void vera_fact(vera_ctx *ctx, enum vera_obj_type side) {
+static void vera_fact(vera_ctx *ctx, enum vera_obj_type side) {
     int start = ctx->pos;
     if(vera_is_in(CURSOR, " ?:,") || CURSOR == DELIM)
         ERROR("unexpected `%c`", CURSOR);
@@ -203,7 +203,7 @@ void vera_fact(vera_ctx *ctx, enum vera_obj_type side) {
     }
 }
 
-void vera_side(vera_ctx *ctx, enum vera_obj_type side) {
+static void vera_side(vera_ctx *ctx, enum vera_obj_type side) {
     if(side == VERA_FACT) ERROR("unreachable");
     vera_add_side(ctx, side);
     if(CURSOR == DELIM)
@@ -218,7 +218,7 @@ void vera_side(vera_ctx *ctx, enum vera_obj_type side) {
     }
 }
 
-void vera_rule(vera_ctx *ctx) {
+static void vera_rule(vera_ctx *ctx) {
     vera_match(ctx, DELIM);
     vera_skipspace(ctx);
     vera_side(ctx, VERA_LHS);
