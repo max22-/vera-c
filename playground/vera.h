@@ -216,7 +216,7 @@ static void vera_fact(vera_ctx *ctx, enum vera_obj_type side) {
     if(end <= start) ERROR("empty string");
     vera_string vstr;
     vstr.string = &ctx->src[start];
-    vstr.len = end - start - 1;
+    vstr.len = end - start;
     if(side == VERA_LHS) {
         int keep = 0;
         if(CURSOR == '?') {
