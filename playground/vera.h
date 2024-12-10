@@ -122,6 +122,7 @@ static void vera_add_port(vera_ctx *ctx, const char *name) {
     obj->type = VERA_PORT;
     obj->as.port.vstr.string = name;
     obj->as.port.vstr.len = slen(name);
+    obj->as.port.intern = -1;
     ctx->obj_count++;
 }
 
