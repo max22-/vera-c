@@ -46,6 +46,7 @@ typedef struct {
     vera_obj *pool;
     size_t pool_size;
     unsigned int obj_count;
+    unsigned int register_count;
 } vera_ctx;
 
 void vera_init_ctx(vera_ctx *ctx, const char *src, vera_obj *pool, size_t pool_size);
@@ -280,9 +281,46 @@ size_t vera_parse(vera_ctx *ctx) {
 #undef DELIM
 
 
-void vera_intern_strings(vera_ctx *ctx) {
-
+/* helper function for vera_intern_strings */
+static int vera_find_string(vera_ctx *ctx, vera_string *vstr) {
+    for(size_t i = 0; i < ctx->obj_count; i++) {
+        vera_obj *obj = &ctx->pool[i];
+        if(obj->type == VERA_FACT) {
+            if(obj->as.fact.intern < 0)
+                return -1;
+            if(vera_scmp(&obj->as.fact.vstr, vstr))
+                return obj->as.fact.intern;
+        } else if(obj->type == VERA_PORT) {
+            if(obj->as.port.intern < 0)
+                return -1;
+            if(vera_scmp(&obj->as.port.vstr, vstr))
+                return obj->as.port.intern;
+        }
+    }
+    return -1;
 }
+
+void vera_intern_strings(vera_ctx *ctx) {
+    int n = 0;
+    for(size_t i = 0; i < ctx->obj_count; i++) {
+        vera_obj *obj = &ctx->pool[i];
+        if(obj->type == VERA_FACT) {
+            int intern = vera_find_string(ctx, &obj->as.fact.vstr);
+            if(intern == -1)
+                obj->as.fact.intern = n++;
+            else
+                obj->as.fact.intern = intern;
+        } else if(obj->type == VERA_PORT) {
+            int intern = vera_find_string(ctx, &obj->as.port.vstr);
+            if(intern == -1)
+                obj->as.port.intern = n++;
+            else
+                obj->as.port.intern = intern;
+        }
+    }
+    ctx->register_count = n;
+}
+
 
 void vera_compile(vera_ctx *ctx) {
 

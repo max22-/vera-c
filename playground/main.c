@@ -45,16 +45,20 @@ int main(void) {
     vera_init_ctx(&ctx, src, pool, pool_size);
     vera_add_ports(&ctx, ports, ARRAY_SIZE(ports));
     vera_parse(&ctx);
+    vera_intern_strings(&ctx);
     for(int i = 0; i < ctx.obj_count; i++) {
         printf("%d\t type=%d\t", i, ctx.pool[i].type);
-        enum vera_obj_type type = ctx.pool[i].type;
-        if(type == VERA_PORT) {
+        vera_obj *obj = &ctx.pool[i];
+        if(obj->type == VERA_PORT) {
+            printf("interned=%d\t", obj->as.port.intern);
             vera_string_print(&ctx.pool[i].as.port.vstr);
-        } else if(type == VERA_FACT) {
+        } else if(obj->type == VERA_FACT) {
+            printf("interned=%d\t", obj->as.fact.intern);
             vera_string_print(&ctx.pool[i].as.fact.vstr);
         }
         printf("\n");
     }
+    printf("%d registers\n", ctx.register_count);
     free(pool);
     return 0;
 }
