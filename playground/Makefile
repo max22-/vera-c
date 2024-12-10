@@ -5,6 +5,7 @@ vera: main.c vera.h
 	$(CC) $(CFLAGS) $< -o $@
 
 tests: tests.c vera.h
+	$(CC) $(CFLAGS) $< -o $@
 
 .PHONY: run clean test
 
