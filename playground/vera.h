@@ -97,6 +97,10 @@ static int vera_scmp(vera_string *s1, vera_string *s2) {
 }
 
 static void vera_add_side(vera_ctx *ctx, enum vera_obj_type type) {
+    if(ctx->pool == NULL) { /* if we do a first pass to calculate the needed pool size */
+        ctx->obj_count++;
+        return;
+    }
     const int obj_id = ctx->obj_count;
     if(obj_id >= ctx->pool_size)
         ERROR("out of memory");
@@ -105,6 +109,10 @@ static void vera_add_side(vera_ctx *ctx, enum vera_obj_type type) {
 }
 
 static void vera_add_fact(vera_ctx *ctx, vera_string vstr, enum vera_obj_type side, int keep, unsigned int count) {
+    if(ctx->pool == NULL) { /* if we do a first pass to calculate the needed pool size */
+        ctx->obj_count++;
+        return;
+    }
     if(ctx->obj_count >= ctx->pool_size)
         ERROR("out of memory");
     vera_obj *obj = &ctx->pool[ctx->obj_count];
@@ -164,7 +172,6 @@ int vera_int(vera_ctx *ctx) {
 }
 
 void vera_fact(vera_ctx *ctx, enum vera_obj_type side) {
-    if(ctx->obj_count >= ctx->pool_size) ERROR("out of memory");
     int start = ctx->pos;
     if(vera_is_in(CURSOR, " ?:,") || CURSOR == DELIM)
         ERROR("unexpected `%c`", CURSOR);
