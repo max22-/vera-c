@@ -5,8 +5,6 @@
 #define VERA_IMPLEMENTATION
 #include "vera.h"
 
-vera_allocator allocator;
-
 #define INIT_VERA_STRINGS(s1, s2) \
     vstr1.string = examples[s1]; \
     vstr1.len = strlen(examples[s1]); \
@@ -49,8 +47,6 @@ void test_scmp(void) {
 }
 
 int main(void) {
-    allocator.alloc = malloc;
-    allocator.free = free;
     test_scmp();
     printf("OK\n");
     return 0;
