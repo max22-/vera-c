@@ -5,6 +5,18 @@
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
+void vera_string_print(vera_string *str) {
+    printf("\"");
+    for(size_t i = 0; i < str->len; i++) {
+        char c = str->string[i];
+        if(c == '\n') 
+            printf("\\n");
+        else 
+            printf("%c", c);
+    }
+    printf("\"");
+}
+
 int main(void) {
     const char *src = 
     "|| sugar\n"
@@ -33,8 +45,16 @@ int main(void) {
     vera_init_ctx(&ctx, src, pool, pool_size);
     vera_add_ports(&ctx, ports, ARRAY_SIZE(ports));
     vera_parse(&ctx);
-    for(int i = 0; i < ctx.obj_count; i++)
-        printf("%d\t type=%d\n", i, ctx.pool[i].type);
+    for(int i = 0; i < ctx.obj_count; i++) {
+        printf("%d\t type=%d\t", i, ctx.pool[i].type);
+        enum vera_obj_type type = ctx.pool[i].type;
+        if(type == VERA_PORT) {
+            vera_string_print(&ctx.pool[i].as.port.vstr);
+        } else if(type == VERA_FACT) {
+            vera_string_print(&ctx.pool[i].as.fact.vstr);
+        }
+        printf("\n");
+    }
     free(pool);
     return 0;
 }
