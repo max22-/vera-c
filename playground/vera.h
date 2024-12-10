@@ -15,10 +15,10 @@ typedef struct vera_string {
 } vera_string;
 
 enum vera_obj_type {
-    VERA_PORT,
-    VERA_FACT,
     VERA_LHS,
     VERA_RHS,
+    VERA_FACT,
+    VERA_PORT,
 };
 
 typedef struct vera_object {
