@@ -321,6 +321,216 @@ void vera_intern_strings(vera_ctx *ctx) {
     ctx->register_count = n;
 }
 
+#ifdef VERA_RISCV32
+
+
+#define emit(instr) \
+    do { \
+        *(uint32_t*)&output[pc] = instr; \
+        pc += 4; \
+    } while(0)
+#define I_type(opcode, funct3, rd, rs, imm) emit((opcode) | (funct3) << 12 | ((rd) & 0x1f) << 7 | ((rs) & 0x1f) << 15 | ((imm) & 0xfff) << 20)
+#define rv_addi(rd, rs, imm) I_type(0x13, 0, rd, rs, imm)
+#define rv_jal(reg, imm) emit(0x6f | (reg) << 7 | ((imm) & 0xff000) | ((imm) & (1 << 11)) << 9 | ((imm) & 0x7fe) << (21 - 1) | ((imm) & (1 << 20)) << 10)
+#define rv_jalr(rd, rs, imm) I_type(0x67, 0, rd, rs, imm)
+#define U_type(opcode, rd, imm) emit((opcode) | ((rd) & 0x1f) << 7 | ((imm) & 0xfffff) << 12)
+#define rv_lui(rd, imm) U_type(0x37, (rd), (imm))
+#define rv_auipc(rd, imm) U_type(0x17, (rd), (imm))
+#define rv_lw(rd, rs, imm) I_type(0x3, 0x2, rd, rs, imm)
+#define S_type(opcode, funct3, rs1, rs2, imm) emit((opcode) | ((imm) & 0xf) << 7 | (funct3) << 12 | ((rs1) & 0x1f) << 15 | ((rs2) & 0x1f) << 20 | (((imm) & 0xfe0) << 20))
+#define rv_sw(rs1, rs2, imm) S_type(0x23, 0x2, rs1, rs2, imm)
+#define B_type(opcode, funct3, rs1, rs2, imm) emit((opcode) | (funct3) << 12 | (((imm) >> 11) & 0x1) << 7 | (((imm) >> 1) & 0xf) << 8 | ((rs1) & 0x1f) << 15 | ((rs2) & 0x1f) << 20 | (((imm) >> 5) & 0x1f) << 25 | (((imm) >> 12) & 0x1f) << 31)
+#define rv_bgeu(rs1, rs2, imm) B_type(0x63, 0x7, rs1, rs2, imm)
+#define rv_beq(rs1, rs2, imm) B_type(0x63, 0x0, rs1, rs2, imm)
+#define R_type(opcode, funct3, funct7, rd, rs1, rs2) emit((opcode) | ((rd) & 0x1f) << 7 | (funct3) << 12 | ((rs1) & 0x1f) << 15 | ((rs2) & 0x1f) << 20 | funct7 << 25)
+#define rv_add(rd, rs1, rs2) R_type(0x33, 0, 0, rd, rs1, rs2)
+#define rv_mul(rd, rs1, rs2) R_type(0x33, 0, 0x1, rd, rs1, rs2)
+/* pseudo instructions */
+#define rv_b(addr) rv_jal(0, addr - pc)
+#define rv_ret() rv_jalr(zero, ra, 0)
+#define rv_li(rd, imm) rv_addi(rd, zero, imm)
+/* my own pseudo instructions */
+#define rv_load(rd, addr) \
+    do { \
+        int32_t offset = addr - pc; \
+        int32_t upper = (offset / (1 << 12)), lower = offset - upper; \
+        assert(lower < 1 << 12); \
+        printf("addr = %d, pc = %u, upper = 0x%x, lower=0x%x\n", addr, pc, upper, lower); \
+        rv_auipc(rd, upper); \
+        rv_lw(rd, rd, lower); \
+    } while(0)
+#define rv_store(data_reg, temp_reg, addr) \
+    do { \
+        int32_t offset = addr - pc; \
+        int32_t upper = (offset / (1 << 12)), lower = offset - upper; \
+        assert(lower < 1 << 12); \
+        rv_auipc(temp_reg, upper); \
+        rv_sw(temp_reg, data_reg, lower); \
+    } while(0)
+#define rv_load_i32_imm(rd, imm) \
+    do { \
+        int32_t upper = (imm) / (1 << 12), lower = (imm) - upper; \
+        assert(lower < 1 << 12); \
+        if(upper != 0) \
+            rv_lui((rd), upper); \
+        rv_li((rd), lower); \
+    } while(0)
+
+
+#define SKIP_PORTS() \
+    do { \
+        while(i < ctx->obj_count && ctx->pool[i].type == VERA_PORT) \
+            i++; \
+    } while(0)
+
+#define SKIP_RULE() \
+    do { \
+        i++; \
+        while(i < ctx->obj_count && ctx->pool[i].type != VERA_LHS) \
+            i++; \
+    } while(0)
+
+#define SKIP_RULES_WITH_EMPTY_LHS() \
+    do { \
+        for(;;) { \
+            if(i >= ctx->obj_count - 1) \
+                break; \
+            vera_obj *obj1 = &ctx->pool[i], *obj2 = &ctx->pool[i+1]; \
+            if(obj1->type == VERA_LHS && obj2->type == VERA_RHS) \
+                SKIP_RULE(); \
+            else \
+                break; \
+        } \
+    } while(0)
+
+static void vera_riscv32_fill_registers(vera_ctx* ctx, uint32_t *registers) {
+    size_t i = 0;
+    SKIP_PORTS();
+    while(i < ctx->obj_count) {
+        assert(ctx->pool[i].type == VERA_LHS);
+        i++; /* we skip the lhs delimiter */
+        if(i < ctx->obj_count && ctx->pool[i].type == VERA_RHS) {
+            /* we have an empty lhs*/
+            i++; /* we skip the rhs delimiter */
+            while(i < ctx->obj_count && ctx->pool[i].type == VERA_FACT) {
+                vera_obj *obj = &ctx->pool[i];
+                registers[obj->as.fact.intern] += obj->as.fact.attr.count;
+                i++;
+            }
+        } else {
+            while(i < ctx->obj_count && ctx->pool[i].type != VERA_LHS)
+                i++;
+        }
+    }
+}
+
+#define LABELS_LIST_SIZE 256
+#define DECLARE_LABELS_LIST(x) \
+    static uint32_t x##_labels[LABELS_LIST_SIZE]; \
+    unsigned int x##_labels_counter = 0;
+
+#define MAKE_LABEL(x) \
+    do { \
+        x##_labels[x##_labels_counter++] = pc; \
+    } while(0)
+
+/* Assembler inspired by https://zserge.com/posts/post-apocalyptic-programming/ */
+
+static size_t vera_riscv32_assemble(vera_ctx *ctx, uint8_t *output, size_t max_size) {
+    uint32_t pc = 0;
+    static uint32_t start_label = 0;
+    DECLARE_LABELS_LIST(registers);
+    DECLARE_LABELS_LIST(rules);
+    static uint32_t skip_labels[256];
+    unsigned int skip_labels_counter = 0;
+    /* flags used to check removed duplicates in lhs */
+    int register_processed[ctx->register_count]; /* boolean */
+    /* used to memorize the lhs (then we add the lhs values, and we generate the code if diff != 0) */
+    int32_t register_diff[ctx->register_count];
+    /* risc-v registers */
+    const uint8_t zero = 0, ra = 1, t0 = 5, t1 = 6, t2 = 7, a0 = 10;
+    /* **************** */
+    rv_b(start_label);
+    for(int i = 0; i < ctx->register_count; i++) {
+        MAKE_LABEL(registers);
+        emit(0);
+    }
+    /* the registers start at output + 4, because the first word is a jump instruction */
+    vera_riscv32_fill_registers(ctx, (uint32_t*)(output + 4));
+
+    start_label = pc;
+    rv_li(a0, 0);
+    int i = 0;
+    SKIP_PORTS();
+    for(;;) {
+        for(unsigned int i = 0; i < ctx->register_count; i++) {
+            register_diff[i] = 0;
+            register_processed[i] = 0;
+        }
+        SKIP_RULES_WITH_EMPTY_LHS();
+        if(i >= ctx->obj_count) break;
+        assert(ctx->pool[i].type == VERA_LHS);
+        i++; /* skip lhs delimiter */
+        MAKE_LABEL(rules);
+        /* we will use t1 to compute the min of the lhs */
+        rv_li(t1, 0xffffffff);
+        for(;;) {
+            vera_obj *obj = &ctx->pool[i];
+            if(register_processed[obj->as.fact.intern]) {
+                i++; 
+                continue;
+            }
+            if(obj->as.fact.attr.keep)
+                register_diff[obj->as.fact.intern] = 0;
+            else
+                register_diff[obj->as.fact.intern] = -1;
+            if(obj->type != VERA_FACT)
+                break;
+            rv_load(t0, registers_labels[obj->as.fact.intern]);
+            rv_li(t2, 0);
+            rv_beq(t0, t2, rules_labels[rules_labels_counter] - pc); /* we skip to next rule if one of the registers is zero */
+            printf("rules_labels[rules_labels_counter] - pc : %d %u %u %d\n", rules_labels_counter, rules_labels[rules_labels_counter], pc, rules_labels[rules_labels_counter] - pc);
+            rv_bgeu(t0, t1, skip_labels[skip_labels_counter] - pc);
+            rv_add(t1, zero, t0);
+            MAKE_LABEL(skip);
+            i++;
+        }
+        assert(ctx->pool[i].type == VERA_RHS);
+        i++; /* skip rhs delimiter */
+        while(i < ctx->obj_count && ctx->pool[i].type == VERA_FACT) {
+            const vera_obj *obj = &ctx->pool[i];
+            const int interned = obj->as.fact.intern;
+            register_diff[interned] += obj->as.fact.attr.count;
+            i++; 
+        }
+        for(unsigned int j = 0; j < ctx->register_count; j++) {
+            int32_t diff = register_diff[j];
+            if(diff != 0) {
+                rv_load(t0, registers_labels[j]);
+                rv_load_i32_imm(t2, diff);
+                rv_mul(t2, t2, t1);
+                rv_add(t0, t0, t2);
+                rv_store(t0, t2, registers_labels[j]);
+            }
+        }
+        rv_addi(a0, a0, 1);
+    }
+    MAKE_LABEL(rules); /* make a new (empty) rule label so that the last rule can make a jump here */
+    for(unsigned int i = 0; i < rules_labels_counter; i++) {
+        printf("rules_labels[%u] = %d\n", i, rules_labels[i]);
+    }
+    rv_ret();
+    return pc;
+}
+
+#undef SKIP_PORTS
+
+size_t vera_riscv32_codegen(vera_ctx *ctx, uint8_t *output, size_t max_size) {
+    vera_riscv32_assemble(ctx, output, max_size); /* first pass to calculate the labels */
+    return vera_riscv32_assemble(ctx, output, max_size);
+}
+
+#endif
 
 void vera_compile(vera_ctx *ctx) {
 

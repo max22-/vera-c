@@ -1,5 +1,6 @@
 #include <stdio.h>
 #define VERA_IMPLEMENTATION
+#define VERA_RISCV32
 #include "vera.h"
 #include <stdlib.h>
 
@@ -59,6 +60,21 @@ int main(void) {
         printf("\n");
     }
     printf("%d registers\n", ctx.register_count);
+
+
+    const size_t binary_size_max = 1024;
+    uint8_t binary[binary_size_max];
+    size_t binary_size = vera_riscv32_codegen(&ctx, binary, binary_size_max);
+
+    FILE *f = fopen("out.bin", "wb");
+    if(f) {
+        if(!fwrite(binary, binary_size, 1, f))
+            fprintf(stderr, "failed to write binary to file\n");
+        fclose(f);
+    } else {
+        fprintf(stderr, "failed to open binary file\n");
+    }
+
     free(pool);
     return 0;
 }

@@ -11,6 +11,7 @@ tests: tests.c vera.h
 
 run: vera
 	./vera
+	riscv64-unknown-elf-objdump -D -b binary -m riscv:rv32 --adjust-vma=0x80000000 out.bin
 
 test: tests
 	./tests
