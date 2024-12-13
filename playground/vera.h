@@ -337,7 +337,7 @@ void vera_intern_strings(vera_ctx *ctx) {
 #define rv_lui(rd, imm) U_type(0x37, (rd), (imm))
 #define rv_auipc(rd, imm) U_type(0x17, (rd), (imm))
 #define rv_lw(rd, rs, imm) I_type(0x3, 0x2, rd, rs, imm)
-#define S_type(opcode, funct3, rs1, rs2, imm) emit((opcode) | ((imm) & 0xf) << 7 | (funct3) << 12 | ((rs1) & 0x1f) << 15 | ((rs2) & 0x1f) << 20 | (((imm) & 0xfe0) << 20))
+#define S_type(opcode, funct3, rs1, rs2, imm) emit((opcode) | ((imm) & 0x1f) << 7 | (funct3) << 12 | ((rs1) & 0x1f) << 15 | ((rs2) & 0x1f) << 20 | (((imm) & 0xfe0) << 20))
 #define rv_sw(rs1, rs2, imm) S_type(0x23, 0x2, rs1, rs2, imm)
 #define B_type(opcode, funct3, rs1, rs2, imm) emit((opcode) | (funct3) << 12 | (((imm) >> 11) & 0x1) << 7 | (((imm) >> 1) & 0xf) << 8 | ((rs1) & 0x1f) << 15 | ((rs2) & 0x1f) << 20 | (((imm) >> 5) & 0x1f) << 25 | (((imm) >> 12) & 0x1f) << 31)
 #define rv_bgeu(rs1, rs2, imm) B_type(0x63, 0x7, rs1, rs2, imm)
@@ -345,6 +345,7 @@ void vera_intern_strings(vera_ctx *ctx) {
 #define R_type(opcode, funct3, funct7, rd, rs1, rs2) emit((opcode) | ((rd) & 0x1f) << 7 | (funct3) << 12 | ((rs1) & 0x1f) << 15 | ((rs2) & 0x1f) << 20 | funct7 << 25)
 #define rv_add(rd, rs1, rs2) R_type(0x33, 0, 0, rd, rs1, rs2)
 #define rv_mul(rd, rs1, rs2) R_type(0x33, 0, 0x1, rd, rs1, rs2)
+#define rv_break() I_type(0x73, 0x0, 0, 0, 1)
 /* pseudo instructions */
 #define rv_b(addr) rv_jal(0, addr - pc)
 #define rv_ret() rv_jalr(zero, ra, 0)
@@ -355,7 +356,7 @@ void vera_intern_strings(vera_ctx *ctx) {
         int32_t offset = addr - pc; \
         int32_t upper = (offset / (1 << 12)), lower = offset - upper; \
         assert(lower < 1 << 12); \
-        printf("addr = %d, pc = %u, upper = 0x%x, lower=0x%x\n", addr, pc, upper, lower); \
+        printf("load addr = %d, pc = %u, offset = %d, upper = 0x%x, lower=0x%x\n", addr, pc, offset, upper, lower); \
         rv_auipc(rd, upper); \
         rv_lw(rd, rd, lower); \
     } while(0)
@@ -364,6 +365,7 @@ void vera_intern_strings(vera_ctx *ctx) {
         int32_t offset = addr - pc; \
         int32_t upper = (offset / (1 << 12)), lower = offset - upper; \
         assert(lower < 1 << 12); \
+        printf("store addr = %d, pc = %u, offset = %d, upper = 0x%x, lower=0x%x\n", addr, pc, offset, upper, lower); \
         rv_auipc(temp_reg, upper); \
         rv_sw(temp_reg, data_reg, lower); \
     } while(0)
@@ -438,7 +440,7 @@ static void vera_riscv32_fill_registers(vera_ctx* ctx, uint32_t *registers) {
 
 static size_t vera_riscv32_assemble(vera_ctx *ctx, uint8_t *output, size_t max_size) {
     uint32_t pc = 0;
-    static uint32_t start_label = 0;
+    static uint32_t start_label = 0, end_label = 0;
     DECLARE_LABELS_LIST(registers);
     DECLARE_LABELS_LIST(rules);
     static uint32_t skip_labels[256];
@@ -462,7 +464,7 @@ static size_t vera_riscv32_assemble(vera_ctx *ctx, uint8_t *output, size_t max_s
     rv_li(a0, 0);
     int i = 0;
     SKIP_PORTS();
-    for(;;) {
+    while(i < ctx->obj_count) {
         for(unsigned int i = 0; i < ctx->register_count; i++) {
             register_diff[i] = 0;
             register_processed[i] = 0;
@@ -472,9 +474,10 @@ static size_t vera_riscv32_assemble(vera_ctx *ctx, uint8_t *output, size_t max_s
         assert(ctx->pool[i].type == VERA_LHS);
         i++; /* skip lhs delimiter */
         MAKE_LABEL(rules);
+        printf("new rule\n");
         /* we will use t1 to compute the min of the lhs */
         rv_li(t1, 0xffffffff);
-        for(;;) {
+        while(ctx->pool[i].type == VERA_FACT) {
             vera_obj *obj = &ctx->pool[i];
             if(register_processed[obj->as.fact.intern]) {
                 i++; 
@@ -484,12 +487,9 @@ static size_t vera_riscv32_assemble(vera_ctx *ctx, uint8_t *output, size_t max_s
                 register_diff[obj->as.fact.intern] = 0;
             else
                 register_diff[obj->as.fact.intern] = -1;
-            if(obj->type != VERA_FACT)
-                break;
             rv_load(t0, registers_labels[obj->as.fact.intern]);
             rv_li(t2, 0);
             rv_beq(t0, t2, rules_labels[rules_labels_counter] - pc); /* we skip to next rule if one of the registers is zero */
-            printf("rules_labels[rules_labels_counter] - pc : %d %u %u %d\n", rules_labels_counter, rules_labels[rules_labels_counter], pc, rules_labels[rules_labels_counter] - pc);
             rv_bgeu(t0, t1, skip_labels[skip_labels_counter] - pc);
             rv_add(t1, zero, t0);
             MAKE_LABEL(skip);
@@ -514,11 +514,14 @@ static size_t vera_riscv32_assemble(vera_ctx *ctx, uint8_t *output, size_t max_s
             }
         }
         rv_addi(a0, a0, 1);
+        rv_b(end_label);
     }
     MAKE_LABEL(rules); /* make a new (empty) rule label so that the last rule can make a jump here */
     for(unsigned int i = 0; i < rules_labels_counter; i++) {
         printf("rules_labels[%u] = %d\n", i, rules_labels[i]);
     }
+    end_label = pc;
+    rv_break();
     rv_ret();
     return pc;
 }
@@ -526,7 +529,9 @@ static size_t vera_riscv32_assemble(vera_ctx *ctx, uint8_t *output, size_t max_s
 #undef SKIP_PORTS
 
 size_t vera_riscv32_codegen(vera_ctx *ctx, uint8_t *output, size_t max_size) {
+    printf("pass 1\n");
     vera_riscv32_assemble(ctx, output, max_size); /* first pass to calculate the labels */
+    printf("pass 2\n");
     return vera_riscv32_assemble(ctx, output, max_size);
 }
 

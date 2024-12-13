@@ -4,8 +4,8 @@ all: vera
 vera: main.c vera.h
 	$(CC) $(CFLAGS) $< -o $@
 
-tests: tests.c vera.h
-	$(CC) $(CFLAGS) $< -o $@
+tests: tests.c vera.h lib/rv32.h
+	$(CC) $(CFLAGS) -Ilib $< -o $@
 
 .PHONY: run clean test
 
